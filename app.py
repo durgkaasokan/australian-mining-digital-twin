@@ -46,31 +46,34 @@ st.sidebar.header("🚛 Fleet Management")
 available_trucks = ["HT-001", "HT-002", "HT-003", "HT-004"]
 selected_trucks = [truck for truck in available_trucks if st.sidebar.checkbox(truck, value=True)]
 
-# SQL Clause Handling safely (with clean trimming)
-weather_list = [w.strip() for w in weather_filter] if weather_filter else ["NONE"]
-truck_list = selected_trucks if selected_trucks else ["NONE"]
+# Strip and lowercase our sidebar list elements to prevent any string mismatches
+weather_list_clean = [w.strip().lower() for w in weather_filter] if weather_filter else ["none"]
+truck_list_clean = [t.strip() for t in selected_trucks] if selected_trucks else ["NONE"]
 
 # ==========================================
-# 3. DYNAMIC DATA QUERIES (FULLY FILTERED)
+# 3. DYNAMIC DATA QUERIES & COMPUTATION (VIEW-INDEPENDENT)
 # ==========================================
-# Read raw logs table completely to do Python side resilient filtering
 df_all_logs = get_data("SELECT *, DATE(timestamp) as production_date FROM fact_operational_logs")
 
-# Apply defensive filters directly using Pandas to avoid SQL string mismatch bugs
 if not df_all_logs.empty:
+    df_all_logs['weather_clean'] = df_all_logs['weather_condition'].astype(str).str.strip().str.lower()
+    
+    # 1. Filtered logs dataset for charts & metrics
     df_logs = df_all_logs[
-        (df_all_logs['weather_condition'].str.strip().isin(weather_list)) & 
-        (df_all_logs['equipment_id'].isin(truck_list))
+        (df_all_logs['weather_clean'].isin(weather_list_clean)) & 
+        (df_all_logs['equipment_id'].isin(truck_list_clean))
     ]
+    
+    # 2. Calculate the Weather Impact Matrix dynamically using Pandas!
+    df_weather = df_all_logs.groupby(['activity', 'weather_condition'])['cycle_time_minutes'].mean().reset_index()
+    df_weather.rename(columns={'cycle_time_minutes': 'avg_cycle_time_minutes'}, inplace=True)
 else:
     df_logs = pd.DataFrame()
+    df_weather = pd.DataFrame()
 
 # Maintenance events filtered by trucks
-truck_clause = ','.join(f"'{t}'" for t in truck_list)
+truck_clause = ','.join(f"'{t}'" for t in truck_list_clean)
 df_maint = get_data(f"SELECT * FROM fact_maintenance_events WHERE equipment_id IN ({truck_clause})")
-
-# Weather Matrix 
-df_weather = get_data("SELECT * FROM view_weather_impact_matrix")
 
 # ==========================================
 # 4. EXECUTIVE KPI CARDS W/ TARGET MATCHING
