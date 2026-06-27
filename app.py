@@ -19,8 +19,21 @@ st.markdown("---")
 # Connect to database helper
 def get_data(query):
     conn = sqlite3.connect("mining_digital_twin.db")
-    df = pd.read_sql_query(query, conn)
-    conn.close()
+    try:
+        # Extra safeguard: parse table name from simple SELECT queries to verify it exists
+        table_match = re.search(r"FROM\s+(\w+)", query, re.IGNORECASE)
+        if table_match:
+            table_name = table_match.group(1)
+            cursor = conn.cursor()
+            cursor.execute(f"SELECT name FROM sqlite_master WHERE type='table' AND name='{table_name}'")
+            if not cursor.fetchone():
+                return pd.DataFrame() # Return empty DataFrame gracefully if table doesn't exist yet
+        
+        df = pd.read_sql_query(query, conn)
+    except Exception:
+        df = pd.DataFrame()
+    finally:
+        conn.close()
     return df
 
 # ==========================================
